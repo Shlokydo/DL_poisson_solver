@@ -11,9 +11,9 @@ import methods
 
 grid_points = 64
 domain_length = 20
-end_time = 40
+end_time = 100
 tspan = np.arange(0, end_time, 0.5)
-diff_coef = 0.01
+diff_coef = 0.001
 N = int(math.pow(grid_points, 2))
 
 x2 = np.linspace(int(-domain_length/2), int(domain_length/2), grid_points + 1)
@@ -21,27 +21,30 @@ x = x2[0:grid_points]
 delta_x = x[1] - x[0]
 y = x
 X, Y = np.meshgrid(x, y, indexing = 'ij')
-w_init = np.exp(-4 * np.sin(np.power(X, 2)) - (np.power(Y, 2) / 20))
+w_init = np.sin(2 * X) + np.cos(2 * Y)
 w_init = np.reshape(w_init, N)
 
-e0 = np.zeros(N)
-e1 = np.ones(N)
-e2 = np.ones(N)
-e4 = np.zeros(N)
-for i in range(grid_points):
-    e2[(grid_points * i) - 1] = 0
-    e4[(grid_points * i) - 1] = 1
-e3 = np.zeros(N)
-e5 = np.zeros(N)
-e3[0] = e2[-1]
-e3[1:] = e2[:-1]
-e5[0] = e4[-1]
-e5[1:] = e4[:-1]
-
-A = spdiags([e1, e1, e5, e2, -4 * e1, e3, e4, e1, e1], [-(N - grid_points), -grid_points, -grid_points + 1, -1, 0, 1, grid_points - 1, grid_points, (N - grid_points)], N, N).tocsr()
-Dx = spdiags([e1, -e1, e1, -e1], [-(N-grid_points), -grid_points, grid_points, (N-grid_points)], N, N).tocsr()
-Dy = spdiags([e5, -e2, e3, -e4], [-grid_points+1, -1, 1, grid_points-1], N, N).tocsr()
+# Using kronecker product
+e1 = np.ones(grid_points)
+_A = spdiags([e1, -2 * e1, e1],[-1, 0, 1], grid_points, grid_points).tocsr()
+_A[0,grid_points-1] = 1 
+_A[grid_points-1,0] = 1
+I = scipy.sparse.eye(grid_points).tocsr()
+A = scipy.sparse.kron(I , _A, 'csr') + scipy.sparse.kron(_A, I, 'csr')
 A[0,0] = 2
+
+_Dx = spdiags([-e1, e1],[-1, 1], grid_points, grid_points).tocsr()
+_Dx[0,grid_points-1] = -1 
+_Dx[grid_points-1,0] = 1
+I = scipy.sparse.eye(grid_points).tocsr()
+Dx = scipy.sparse.kron(_Dx, I, 'csr')
+
+e1 = np.ones(grid_points)
+_Dy = spdiags([-e1, e1],[-1, 1], grid_points, grid_points).tocsr()
+_Dy[0,grid_points-1] = -1 
+_Dy[grid_points-1,0] = 1
+I = scipy.sparse.eye(grid_points).tocsr()
+Dy = scipy.sparse.kron(I, _Dy, 'csr')
 
 # sol = methods.inv(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
 # sol, cg_count = methods.cg_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
@@ -49,7 +52,7 @@ A[0,0] = 2
 # sol, bicgstab_count = methods.bicgstab_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
 sol = methods.fft_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, grid_points, N, domain_length)
 
-# print(cg_count)
+# # print(cg_count)
 
 fig = plt.figure()
 lim = domain_length/2
@@ -65,4 +68,4 @@ def animate(i):
 anim = FuncAnimation(fig, animate, frames=sol.y.shape[1], interval=500)
 
 print('\nSaving Animation...\n')
-anim.save('fft_advec_diff.mp4', fps=15, extra_args=['-vcodec', 'libx264'], dpi = 235)
+anim.save('advec_diff.mp4', fps=15, extra_args=['-vcodec', 'libx264'], dpi = 235)
