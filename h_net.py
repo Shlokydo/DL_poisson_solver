@@ -133,6 +133,7 @@ class conv_Axb(nn.Module):
         x shape = [batch x N**2]
         '''
 
+        x = x.T
         batch = x.shape[0]
         N = int(np.sqrt(x.shape[-1]))
         x = x.reshape((batch,1,N,N))
@@ -147,53 +148,30 @@ class conv_Axb(nn.Module):
     def getA(self, grid_points):
         N = grid_points**2
 
-        B = -4*torch.eye(N,N)
-        idx = torch.arange(N)
+        e1 = np.ones(grid_points)
+        _A = spdiags([e1, -2 * e1, e1],[-1, 0, 1], grid_points, grid_points).tocsr()
+        _A[0,grid_points-1] = 1 
+        _A[grid_points-1,0] = 1
+        I = scipy.sparse.eye(grid_points).tocsr()
+        A = scipy.sparse.kron(I , _A, 'csr') + scipy.sparse.kron(_A, I, 'csr')
+        A[0,0] = 2
+        A = A.tocoo()
 
-        e1 = torch.ones(N)
-        e2 = torch.zeros(N)
+        values = A.data
+        indices = np.vstack((A.row, A.col))
 
-        e1[torch.arange(grid_points)*grid_points-1] = 0
-        e2[torch.arange(grid_points)*grid_points] = 1
+        i = torch.LongTensor(indices)
+        v = torch.FloatTensor(values)
+        shape = A.shape
 
-        B[idx,idx-1] = 1-e2
-        B[idx-1,idx] = 1-e2
-
-        B[idx-grid_points+1,idx] = 1-e1#e3
-        B[idx-grid_points,idx] = 1
-        B[idx-(N-grid_points),idx] = 1
-
-        B[idx,idx-grid_points+1] = 1-e1 #4
-        B[idx,idx-grid_points] = 1
-        B[idx,idx-(N-grid_points)] = 1
-
-        B[10,0] = 2
-
-        # e1 = np.ones(grid_points)
-        # _A = spdiags([e1, -2 * e1, e1],[-1, 0, 1], grid_points, grid_points).tocsr()
-        # _A[0,grid_points-1] = 1 
-        # _A[grid_points-1,0] = 1
-        # I = scipy.sparse.eye(grid_points).tocsr()
-        # A = scipy.sparse.kron(I , _A, 'csr') + scipy.sparse.kron(_A, I, 'csr')
-        # A[0,0] = 2
-        # A = A.tocoo()
-
-        # values = A.data
-        # indices = np.vstack((A.row, A.col))
-
-        # i = torch.LongTensor(indices)
-        # v = torch.FloatTensor(values)
-        # shape = A.shape
-
-        # return torch.sparse.FloatTensor(i, v, torch.Size(shape))
-
-        return B
+        return torch.sparse.FloatTensor(i, v, torch.Size(shape))
 
 
     def learn(self, grid_points, A, N, i):
 
-        x = torch.rand((32,N))*2-1
-        b = torch.matmul(x,A.T)
+        r = torch.randint(0, 2, (1, 1))
+        x = r * torch.rand((32,N))*2-1 + (1 - r) * torch.rand((32,N))
+        b = torch.sparse.mm(A, x.T)
 
         x = x.reshape((32,grid_points,grid_points))
         x_hat = self.push(b)
@@ -214,8 +192,9 @@ class conv_Axb(nn.Module):
         A = self.getA(grid_points)
         N = grid_points**2
 
-        x = torch.rand((32,N))*2-1
-        b = torch.matmul(x,A.T)
+        r = torch.randint(0, 2, (1, 1))
+        x = r * torch.rand((32,N))*2-1 + (1 - r) * torch.rand((32,N))
+        b = torch.sparse.mm(A, x.T)
 
         x_hat = self.push(b)
 
@@ -241,7 +220,7 @@ def training():
             print('saving model: {}'.format(a))
             torch.save(cAxb.state_dict(), './model.ckp')
 
-# training()
+training()
 
 cAxb = conv_Axb()
 print('Loading saved model')
