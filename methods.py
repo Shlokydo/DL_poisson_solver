@@ -32,11 +32,14 @@ def inv(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef):
     
     A_inv = sl.inv(A.toarray())
 
-    def stepper(t, w, dx, A, Dx, Dy, nu):        
+    def stepper(t, w, dx, A, Dx, Dy, nu): 
+
         psi = math.pow(dx, 2) * np.matmul(A_inv, w)
+        psi = psi - np.min(psi)
+
         return matmuls(psi, w, dx, A, Dx, Dy, nu)
 
-    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', t_eval= tspan, args = (delta_x, A, Dx, Dy, diff_coef))
+    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', t_eval= tspan, args = (delta_x, A, Dx, Dy, diff_coef), first_step = 0.5)
 
     return sol
 
@@ -55,15 +58,20 @@ def fft_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, n, N, L):
 
         return K3
 
+    psi_return = []
+    K3 = get_K3()
     def stepper(t, w, dx, A, Dx, Dy, nu):     
-        K3 = get_K3()
+
         psi = np.multiply(-np.fft.fft2(np.reshape(w, (n, n))), K3) 
         psi = np.reshape(np.real(np.fft.ifft2(psi)), N)  
+        psi = psi - np.min(psi)
+        psi_return.append(psi)
+
         return matmuls(psi, w, dx, A, Dx, Dy, nu)
 
-    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', t_eval= tspan, args = (delta_x, A, Dx, Dy, diff_coef))
+    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', args = (delta_x, A, Dx, Dy, diff_coef), first_step = 0.5, t_eval=tspan)
 
-    return sol
+    return sol, psi_return
 
 def cg_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef):
 
@@ -79,10 +87,11 @@ def cg_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef):
         cgs, _ = scipy.sparse.linalg.cg(A, w, tol = 1e-5, maxiter=200, callback=cb)
         counter_list.append(count)
         psi = math.pow(dx, 2) * cgs
-        
+        psi = psi - np.min(psi)
+
         return matmuls(psi, w, dx, A, Dx, Dy, nu)
 
-    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', t_eval= tspan, args = (delta_x, A, Dx, Dy, diff_coef))
+    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', t_eval= tspan, args = (delta_x, A, Dx, Dy, diff_coef), first_step = 0.5)
 
     return sol, counter_list
 
@@ -100,10 +109,11 @@ def gmres_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef):
         cgs, _ = scipy.sparse.linalg.gmres(A, w, tol = 1e-5, maxiter=1000, callback=cb)
         counter_list.append(count)
         psi = math.pow(dx, 2) * cgs
+        psi = psi - np.min(psi)
         
         return matmuls(psi, w, dx, A, Dx, Dy, nu)
 
-    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', t_eval= tspan, args = (delta_x, A, Dx, Dy, diff_coef))
+    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', t_eval= tspan, args = (delta_x, A, Dx, Dy, diff_coef), first_step = 0.5)
 
     return sol, counter_list
 
@@ -121,9 +131,10 @@ def bicgstab_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef):
         cgs, _ = scipy.sparse.linalg.bicgstab(A, w, tol = 1e-5, maxiter=1000, callback=cb)
         counter_list.append(count)
         psi = math.pow(dx, 2) * cgs
-        
+        psi = psi - np.min(psi)
+
         return matmuls(psi, w, dx, A, Dx, Dy, nu)
 
-    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', t_eval= tspan, args = (delta_x, A, Dx, Dy, diff_coef))
+    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', t_eval= tspan, args = (delta_x, A, Dx, Dy, diff_coef), first_step = 0.5)
 
     return sol, counter_list

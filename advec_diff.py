@@ -6,14 +6,20 @@ import scipy.linalg as sl
 from scipy.integrate import solve_ivp
 import scipy.sparse
 from matplotlib.animation import FuncAnimation
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import methods
 
+#Set the number of grid points
 grid_points = 64
+#Set the domain lenght
 domain_length = 20
-end_time = 100
-tspan = np.arange(0, end_time, 0.5)
+#Set the end time
+end_time = 10
+#Set the diffusion coefficient
 diff_coef = 0.001
+
+tspan = np.arange(0, end_time, 0.5)
 N = int(math.pow(grid_points, 2))
 
 x2 = np.linspace(int(-domain_length/2), int(domain_length/2), grid_points + 1)
@@ -21,7 +27,7 @@ x = x2[0:grid_points]
 delta_x = x[1] - x[0]
 y = x
 X, Y = np.meshgrid(x, y, indexing = 'ij')
-w_init = np.sin(2 * X) + np.cos(2 * Y)
+w_init = np.exp(-2 * np.power(X, 2) - (np.power(Y, 2) / 20))
 w_init = np.reshape(w_init, N)
 
 # Using kronecker product
@@ -50,22 +56,35 @@ Dy = scipy.sparse.kron(I, _Dy, 'csr')
 # sol, cg_count = methods.cg_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
 # sol, gmres_count = methods.gmres_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
 # sol, bicgstab_count = methods.bicgstab_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
-sol = methods.fft_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, grid_points, N, domain_length)
-
+sol, psi_r = methods.fft_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, grid_points, N, domain_length)
 # # print(cg_count)
 
-fig = plt.figure()
-lim = domain_length/2
-ax = plt.axes(xlim=(-lim, lim), ylim=(-lim, lim))
-mesh = ax.pcolormesh(X, Y, np.reshape(sol.y[:,0], (grid_points, grid_points)), cmap='jet', shading='gouraud')
-fig.colorbar(mesh)
+# print('Time: ', sol.t)
+print('Time stepper count: ', len(psi_r))
 
-def animate(i):
-    data = sol.y[:,i]
-    mesh.set_array(data)
-    return mesh,
+def make_animation(inputs, name):
 
-anim = FuncAnimation(fig, animate, frames=sol.y.shape[1], interval=500)
+    fig = plt.figure()
+    lim = domain_length/2
+    ax = plt.axes(xlim=(-lim, lim), ylim=(-lim, lim))
 
-print('\nSaving Animation...\n')
-anim.save('advec_diff.mp4', fps=15, extra_args=['-vcodec', 'libx264'], dpi = 235)
+    div = make_axes_locatable(ax)
+    cax = div.append_axes('right', '5%', '5%')
+
+    mesh = ax.pcolormesh(X, Y, np.reshape(inputs[0], (grid_points, grid_points)), cmap='jet', shading='gouraud')
+    cb = fig.colorbar(mesh, cax=cax)
+
+    def animate(i):
+        mesh = ax.pcolormesh(X, Y, np.reshape(inputs[i], (grid_points, grid_points)), cmap='jet', shading='gouraud')
+        cax.cla()
+        fig.colorbar(mesh, cax=cax)
+        return mesh,
+
+    anim = FuncAnimation(fig, animate, frames=len(inputs), interval=20)
+
+    print(f'\nSaving Animation: {name}.mp4\n')
+    anim.save(name + '.mp4', fps=15, extra_args=['-vcodec', 'libx264'], dpi = 100)
+
+y = [sol.y[:,i] for i in range(sol.y.shape[1])]
+make_animation(y, 't_advec_diff')
+# make_animation(psi_r, 't_random')
