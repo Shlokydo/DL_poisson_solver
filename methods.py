@@ -59,19 +59,22 @@ def fft_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, n, N, L):
         return K3
 
     psi_return = []
+    omega_return = []
     K3 = get_K3()
     def stepper(t, w, dx, A, Dx, Dy, nu):     
 
         psi = np.multiply(-np.fft.fft2(np.reshape(w, (n, n))), K3) 
         psi = np.reshape(np.real(np.fft.ifft2(psi)), N)  
         psi = psi - np.min(psi)
+        
         psi_return.append(psi)
+        omega_return.append(w)
 
         return matmuls(psi, w, dx, A, Dx, Dy, nu)
 
     sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', args = (delta_x, A, Dx, Dy, diff_coef), first_step = 0.5, t_eval=tspan)
 
-    return sol, psi_return
+    return sol, psi_return, omega_return
 
 def cg_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef):
 

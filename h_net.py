@@ -234,7 +234,7 @@ plt.colorbar(a)
 plt.show()
 print(l)
 
-l, img = cAxb.get_error(256)
+l, img = cAxb.get_error(512)
 
 print(l)
 a = plt.imshow(img)
