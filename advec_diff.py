@@ -11,6 +11,12 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import h5py
 import methods
 
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--order", '-o', default = 2, type = int, choices = [2, 4], help = "Order of the discretization scheme")
+args = parser.parse_args()
+
 #Opening a HDF5 file for writing datasets
 f = h5py.File('Dataset_AD.h5', mode = 'a')
 
@@ -46,7 +52,7 @@ delta_x = x[1] - x[0]
 y = x
 X, Y = np.meshgrid(x, y, indexing = 'ij')
 
-# w_init = np.exp(-2 * np.power(X, 2) - (np.power(Y, 2) / 10)) - np.exp(-1 * np.power(X - 1, 2) / 20 - 2 * (np.power(Y - 1, 2))) + np.exp(-1 * np.power(X + 4, 2) / 20 - 2 * (np.power(Y + 8, 2)))
+#w_init = np.exp(-2 * np.power(X, 2) - (np.power(Y, 2) / 10)) 
 # w_init = w_init + np.exp(-2 * np.power(X - 3, 2) - (np.power(Y, 2) / 10)) - np.exp(-1 * np.power(X + 4, 2) / 20 - 2 * (np.power(Y - 2, 2))) + np.exp(-1 * np.power(X + 5, 2) / 20 - 2 * (np.power(Y - 8, 2)))
 # w_init = w_init + np.sin(X) + np.tanh(X * Y) 
 # w_init = np.exp(-0.25 * np.power(X-5, 2) - 2 * (np.power(Y, 2))) - np.exp(-0.25 * np.power(X+5, 2) - 2 * (np.power(Y, 2)))
@@ -55,62 +61,114 @@ X, Y = np.meshgrid(x, y, indexing = 'ij')
 #w_init = (np.power(0.1 * X, 2) + np.power(0.1 * Y, 2))
 # w_init = (np.power(0.1 * X, 2) + np.power(0.1 * Y, 5)) + np.cos(X) * np.sin(Y) * np.tan(0.1 * X)
 # w_init = w_init + (0.1 * np.power(Y, 2)  + np.sinc(Y)) * np.cos(Y)  + np.random.rand(grid_points, grid_points) + np.exp(-2 * np.power(X, 2) - (np.power(Y, 2) / 20))
-w_init = Y + np.sin(X)
+w_init = np.sin(X) + np.cos(Y)
 w_init = np.reshape(w_init, N)
 
-# Using kronecker product
-e1 = np.ones(grid_points)
-_A = spdiags([e1, -2 * e1, e1],[-1, 0, 1], grid_points, grid_points).tocsr()
-_A[0,grid_points-1] = 1 
-_A[grid_points-1,0] = 1
-I = scipy.sparse.eye(grid_points).tocsr()
-A = scipy.sparse.kron(I , _A, 'csr') + scipy.sparse.kron(_A, I, 'csr')
-A[0,0] = 2
+if args.order == 2:
+    print('\nUsing second order space discretization.\n')
 
-_Dx = spdiags([-e1, e1],[-1, 1], grid_points, grid_points).tocsr()
-_Dx[0,grid_points-1] = -1 
-_Dx[grid_points-1,0] = 1
-I = scipy.sparse.eye(grid_points).tocsr()
-Dx = scipy.sparse.kron(_Dx, I, 'csr')
+    # A using kronecker product
+    e1 = np.ones(grid_points) / (math.pow(delta_x, 2))
+    _A = spdiags([e1, -2 * e1, e1],[-1, 0, 1], grid_points, grid_points).tocsr()
+    _A[0,grid_points-1] = 1 * e1[0] 
+    _A[grid_points-1,0] = 1 * e1[0]
+    I = scipy.sparse.eye(grid_points).tocsr()
+    A = scipy.sparse.kron(I , _A, 'csr') + scipy.sparse.kron(_A, I, 'csr')
+    A[0,0] = 2
+    #plt.spy(A, marker = '.', markersize = 2)
+    #plt.show()
 
-e1 = np.ones(grid_points)
-_Dy = spdiags([-e1, e1],[-1, 1], grid_points, grid_points).tocsr()
-_Dy[0,grid_points-1] = -1 
-_Dy[grid_points-1,0] = 1
-I = scipy.sparse.eye(grid_points).tocsr()
-Dy = scipy.sparse.kron(I, _Dy, 'csr')
+    e1 = np.ones(grid_points) / (2 * math.pow(delta_x, 1)) 
+    _Dx = spdiags([-e1, e1],[-1, 1], grid_points, grid_points).tocsr()
+    _Dx[0,grid_points-1] = -1 * e1[0] 
+    _Dx[grid_points-1,0] = 1 * e1[0]
+    I = scipy.sparse.eye(grid_points).tocsr()
+    Dx = scipy.sparse.kron(_Dx, I, 'csr')
+    #plt.spy(Dx, marker = '.', markersize = 2)
+    #plt.show()
+
+    _Dy = spdiags([-e1, e1],[-1, 1], grid_points, grid_points).tocsr()
+    _Dy[0,grid_points-1] = -1 * e1[0] 
+    _Dy[grid_points-1,0] = 1 * e1[0]
+    I = scipy.sparse.eye(grid_points).tocsr()
+    Dy = scipy.sparse.kron(I, _Dy, 'csr')
+    #plt.spy(Dy, marker = '.', markersize = 2)
+    #plt.show()
+
+elif args.order == 4:
+    print('\nUsing fourth order space discretization.\n')
+
+    # A using kronecker product 4th order
+    e1 = np.ones(grid_points) / (12 * math.pow(delta_x, 2)) 
+    _A = spdiags([-e1, 16 * e1, -30 * e1, 16 * e1, -e1], [-2, -1, 0, 1, 2], grid_points, grid_points).tocsr()
+    _A[0,grid_points-1] = 16 * e1[0] 
+    _A[0,grid_points-2] = -1 * e1[0] 
+    _A[1,grid_points-1] = -1 * e1[0] 
+    _A[grid_points-1,0] = 16 * e1[0] 
+    _A[grid_points-1,1] = -1 * e1[0] 
+    _A[grid_points-2,0] = -1 * e1[0] 
+    I = scipy.sparse.eye(grid_points).tocsr()
+    A = scipy.sparse.kron(I , _A, 'csr') + scipy.sparse.kron(_A, I, 'csr')
+    A[0,0] = 2
+    #plt.spy(A, marker = '.', markersize = 2)
+    #plt.show()
+
+    e1 = np.ones(grid_points) / (12 * math.pow(delta_x, 1)) 
+    _Dx = spdiags([e1, -8 * e1, 8 * e1, -e1], [-2, -1, 1, 2], grid_points, grid_points).tocsr()
+    _Dx[0, grid_points-1] = -8 * e1[0]
+    _Dx[0, grid_points-2] = 1 * e1[0]
+    _Dx[1, grid_points-1] = 1 * e1[0]
+    _Dx[grid_points-1, 0] = 8 * e1[0]
+    _Dx[grid_points-1, 1] = -1 * e1[0]
+    _Dx[grid_points-2, 0] = -1 * e1[0]
+    Dx = scipy.sparse.kron(I, _Dx, 'csr')
+    #plt.spy(Dx, marker = '.', markersize = 2)
+    #plt.show()
+
+
+    _Dy = spdiags([e1, -8 * e1, 8 * e1, -e1], [-2, -1, 1, 2], grid_points, grid_points).tocsr()
+    _Dy[0, grid_points-1] = -8 * e1[0]
+    _Dy[0, grid_points-2] = 1 * e1[0]
+    _Dy[1, grid_points-1] = 1 * e1[0]
+    _Dy[grid_points-1, 0] = 8 * e1[0]
+    _Dy[grid_points-1, 1] = -1 * e1[0]
+    _Dy[grid_points-2, 0] = -1 * e1[0]
+    Dy = scipy.sparse.kron(_Dy, I, 'csr')
+    #plt.spy(Dy, marker = '.', markersize = 2)
+    #plt.show()
 
 # sol = methods.inv(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
 # sol, cg_count = methods.cg_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
 # sol, gmres_count = methods.gmres_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
 # sol, bicgstab_count = methods.bicgstab_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
-sol, psi_r, omega_r = methods.fft_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, grid_points, N, domain_length)
+#sol, psi_r, omega_r = methods.fft_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, grid_points, N, domain_length)
 # # print(cg_count)
 
-temp = resize
-num_samples = 6000
-if len(psi_r) < num_samples:
-    tmp = 1
-    resize += len(psi_r)
-    print('Number of samples to be added: ', resize - temp)
-else:
-    tmp = int(len(psi_r) / num_samples)
-    resize += (int(len(psi_r) / tmp) + 1)
-    print('Number of samples to be added: ', resize - temp)
-
-#Resize the HDF5 datasets
-p_dataset.resize((resize, grid_points * grid_points))
-w_dataset.resize((resize, grid_points * grid_points))
-
-#Appending data to HDF5 datasets
-p_dataset[temp:] = np.asarray(psi_r)[::tmp]
-w_dataset[temp:] = np.asarray(omega_r)[::tmp]
-f.attrs['Samples'] = resize
-print('Total number of samples: ', resize)
-
-#Flushing and closing the HDF5 file
-print('Saving in HDF5 file.')
-f.flush()
+#temp = resize
+#num_samples = 6000
+#if len(psi_r) < num_samples:
+#    tmp = 1
+#    resize += len(psi_r)
+#    print('Number of samples to be added: ', resize - temp)
+#else:
+#    tmp = int(len(psi_r) / num_samples)
+#    resize += (int(len(psi_r) / tmp) + 1)
+#    print('Number of samples to be added: ', resize - temp)
+#
+##Resize the HDF5 datasets
+#p_dataset.resize((resize, grid_points * grid_points))
+#w_dataset.resize((resize, grid_points * grid_points))
+#
+##Appending data to HDF5 datasets
+#p_dataset[temp:] = np.asarray(psi_r)[::tmp]
+#w_dataset[temp:] = np.asarray(omega_r)[::tmp]
+#f.attrs['Samples'] = resize
+#print('Total number of samples: ', resize)
+#
+##Flushing and closing the HDF5 file
+#print('Saving in HDF5 file.')
+#f.flush()
+f.attrs['delta_x'] = delta_x
 f.close()
  
 print('Time stepper count: ', len(psi_r))
@@ -138,6 +196,6 @@ def make_animation(inputs, name):
     print(f'\nSaving Animation: {name}.mp4\n')
     anim.save(name + '.mp4', fps=15, extra_args=['-vcodec', 'libx264'], dpi = 100)
 
-y = [sol.y[:,i] for i in range(20)]
+y = [sol.y[:,i] for i in range(80)]
 make_animation(y, 't_advec_diff')
 # make_animation(psi_r, 't_random0')

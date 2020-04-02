@@ -18,43 +18,51 @@ import matplotlib.pyplot as plt
 import argparse
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--order", '-o', default = 2, type = int, choices = [2, 4], help = "Order of the discretization scheme")
 parser.add_argument("--stencil", '-s', default = 64, type = int, help = "Stencil Size")
 parser.add_argument("--index", '-i', default = 10000, type = int, help = "Index in the dataset.")
 parser.add_argument("--trunc_size", '-ts', default = 55, type = int, help = "Truncation size of the matrix")
 args = parser.parse_args()
 
-
 torch.set_default_tensor_type(torch.cuda.FloatTensor)
-
-
-
 
 def makeA(grid_points):
     '''
     This is taken from your code.
 
     '''
-        
-    # Using kronecker product second order
-    #e1 = np.ones(grid_points)
-    #_A = spdiags([e1, -2 * e1, e1],[-1, 0, 1], grid_points, grid_points).tocsr()
-    #_A[0,grid_points-1] = 1 
-    #_A[grid_points-1,0] = 1
-    #I = scipy.sparse.eye(grid_points).tocsr()
-    #A = scipy.sparse.kron(I , _A, 'csr') + scipy.sparse.kron(_A, I, 'csr')
-    #A[0,0] = 2
+    if args.order == 2:
+        print('\nUsing second order space discretization.\n')
 
-    # Using kronecker product Fourth order
-    e1 = np.ones(grid_points)
-    _A = spdiags([-e1, 16 * e1, -30 * e1, 16 * e1, -e1],[-2, -1, 0, 1, 2], grid_points, grid_points).tocsr()
-    _A[0,grid_points-1] = 1 
-    _A[grid_points-1,0] = 1 
-    I = scipy.sparse.eye(grid_points).tocsr()
-    A = scipy.sparse.kron(I , _A, 'csr') + scipy.sparse.kron(_A, I, 'csr')
-    A[0,0] = 2
-    
-    #plt.spy(A, marker = '.', markersize = 2)
-    #plt.show()
+        # A using kronecker product
+        e1 = np.ones(grid_points)# / (math.pow(delta_x, 2))
+        _A = spdiags([e1, -2 * e1, e1],[-1, 0, 1], grid_points, grid_points).tocsr()
+        _A[0,grid_points-1] = 1 * e1[0] 
+        _A[grid_points-1,0] = 1 * e1[0]
+        I = scipy.sparse.eye(grid_points).tocsr()
+        A = scipy.sparse.kron(I , _A, 'csr') + scipy.sparse.kron(_A, I, 'csr')
+        A[0,0] = 2
+        #plt.spy(A, marker = '.', markersize = 2)
+        #plt.show()
+
+    elif args.order == 4:
+        print('\nUsing fourth order space discretization.\n')
+
+        # A using kronecker product 4th order
+        e1 = np.ones(grid_points)# / (12 * math.pow(delta_x, 2)) 
+        _A = spdiags([-e1, 16 * e1, -30 * e1, 16 * e1, -e1], [-2, -1, 0, 1, 2], grid_points, grid_points).tocsr()
+        _A[0,grid_points-1] = 16 * e1[0] 
+        _A[0,grid_points-2] = -1 * e1[0] 
+        _A[1,grid_points-1] = -1 * e1[0] 
+        _A[grid_points-1,0] = 16 * e1[0] 
+        _A[grid_points-1,1] = -1 * e1[0] 
+        _A[grid_points-2,0] = -1 * e1[0] 
+        I = scipy.sparse.eye(grid_points).tocsr()
+        A = scipy.sparse.kron(I , _A, 'csr') + scipy.sparse.kron(_A, I, 'csr')
+        A[0,0] = 2
+        #plt.spy(A, marker = '.', markersize = 2)
+        #plt.show()
+        
     return A
 
 
@@ -85,9 +93,13 @@ def generate_stencils():
         plt.imshow(stencil)
         plt.show()
         
-        np.save('stencil'+str(s), stencil)
+        if args.order == 2:
+            np.save('stencil'+str(s), stencil)
+        elif args.order == 4:
+            np.save('4th_stencil'+str(s), stencil)
 
         #return stencil
+generate_stencils()
 
 class deconvolve(torch.nn.Module):
     
@@ -106,7 +118,10 @@ class deconvolve(torch.nn.Module):
         w = (stencil_size - cropped_size)//2
         padding_size = cropped_size - 1
         
-        self.stencil = np.load('stencil'+str(stencil_size)+'.npy')
+        if args.order == 2:
+            self.stencil = np.load('stencil'+str(stencil_size)+'.npy')
+        elif args.order == 4:
+            self.stencil = np.load('4th_stencil'+str(stencil_size)+'.npy')
         plt.imshow(self.stencil)
         plt.show()
         
@@ -141,6 +156,8 @@ def load_data(index):
     import h5py
     data = h5py.File('./Dataset_AD.h5')
     om = np.reshape(np.array(data['omega_64'][index]), (64,64))
+    plt.imshow(om)
+    plt.show()
     psi = np.reshape(np.array(data['psi_64'][index]), (64,64))
     
     return om, psi
