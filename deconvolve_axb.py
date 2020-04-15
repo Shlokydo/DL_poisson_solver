@@ -24,7 +24,8 @@ parser.add_argument("--index", '-i', default = 10000, type = int, help = "Index 
 parser.add_argument("--trunc_size", '-ts', default = 55, type = int, help = "Truncation size of the matrix")
 args = parser.parse_args()
 
-torch.set_default_tensor_type(torch.cuda.FloatTensor)
+if torch.cuda.is_available():
+    torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
 def makeA(grid_points):
     '''
@@ -99,7 +100,6 @@ def generate_stencils():
             np.save('4th_stencil'+str(s), stencil)
 
         #return stencil
-generate_stencils()
 
 class deconvolve(torch.nn.Module):
     
@@ -140,9 +140,11 @@ class deconvolve(torch.nn.Module):
         
         
     def __call__(self, grid):
-        
-        grid = torch.from_numpy(grid).cuda().float()
-        #grid = torch.from_numpy(grid).float()
+       
+        if torch.cuda.is_available():
+            grid = torch.from_numpy(grid).cuda().float()
+        else:
+            grid = torch.from_numpy(grid).float()
         grid = grid.reshape((1,1,*grid.shape))
         ret = self.conv(grid).squeeze().cpu().detach().numpy()
         ret = ret - np.min(ret)
@@ -156,9 +158,14 @@ def load_data(index):
     import h5py
     data = h5py.File('./Dataset_AD.h5')
     om = np.reshape(np.array(data['omega_64'][index]), (64,64))
-    plt.imshow(om)
-    plt.show()
+    plt.subplot(1, 2, 1)
+    plt.title('OMEGA', fontsize = 10)
+    plt.imshow(om, cmap = 'jet')
     psi = np.reshape(np.array(data['psi_64'][index]), (64,64))
+    plt.subplot(1, 2, 2)
+    plt.title('PSI', fontsize = 10)
+    plt.imshow(psi, cmap = 'jet')
+    plt.show()
     
     return om, psi
 
