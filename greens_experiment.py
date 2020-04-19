@@ -40,9 +40,6 @@ def load_data():
     
     return bs, xs, b_m, b_std, x_m, x_std
 
-
-
-
 class green_net(nn.Module):
     
 
@@ -145,13 +142,7 @@ class mp_cnn(green_net):
         #print(x.shape)
         return self.l3(x)
     
-    
-    
-    
-    
 def train_nets():
-        
-#if __name__ == '__main__':
     
     L = 4
     kernel_size = [10, 30]
@@ -206,12 +197,7 @@ def train_nets():
             
         return np.array(losses)
 
-
-
 def plot_all(i):
-    
-    
-
     
     plt.subplot(1,4,1)
     plt.imshow(bs[i])
