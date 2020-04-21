@@ -82,7 +82,7 @@ class multigrid_conv2d_v1(nn.Module):
     x_restricted = self.restriction(x, self.N)[::-1]
 
     x = x_restricted[0]
-    y = torch.zeros((x.shape[0], x.shape[1], x.shape[2]//2, x.shape[3]//2)).to('cuda' if torch.cuda.is_available() else 'cpu')
+    y = nn.functional.interpolate(torch.zeros_like(x), scale_factor=0.5)
 
     for (cnn_i, x_i) in zip(self.layers, x_restricted):
       
@@ -113,7 +113,7 @@ class multigrid_conv2d_v2(multigrid_conv2d_v1):
     x_restricted = self.restriction(x, self.N)[::-1]
 
     x = x_restricted[0]
-    y = torch.zeros((x.shape[0], x.shape[1], x.shape[2]//2, x.shape[3]//2)).to('cuda' if torch.cuda.is_available() else 'cpu')
+    y = nn.functional.interpolate(torch.zeros_like(x), scale_factor=0.5)
 
     for x_i in x_restricted:
       
