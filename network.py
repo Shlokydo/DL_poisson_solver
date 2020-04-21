@@ -32,6 +32,9 @@ class multigrid_conv2d_v1(nn.Module):
     self.prolongate_conv.weight = nn.Parameter(data = torch.tensor(self.prolongate_stencil).float(), requires_grad = False)
     self.prolongate_conv.bias = nn.Parameter(data = torch.zeros(self.in_channels).float(), requires_grad = False)
 
+    #Resgistering buffer for psi_init
+    self.register_buffer('psi_init', None)
+
   def generate_layers(self):
     
     self.layers = []
@@ -65,8 +68,8 @@ class multigrid_conv2d_v1(nn.Module):
     Outputs x prolongated to a level above.
     '''
     inp = x.repeat(1, 1, 2, 3)[:, :, :x.shape[2]+1, :x.shape[3]+1]
-    inp_h = torch.Tensor()
-    inp_h = inp_h.new_empty((x.shape[0], x.shape[1], 2 * x.shape[2], 2 * x.shape[3]))
+    inp_h = nn.functional.upsample(inp, size=None, scale_factor=2, mode='nearest', align_corners=None) 
+    print('inp_h: ', inp_h.is_cuda)
     
     inp_h[:,:,::2,::2] = inp[:,:,:-1,:-1]
     inp_h[:,:,::2,1::2] = 0.5 * (inp[:,:,:-1,:-1] + inp[:,:,:-1,1:])
@@ -80,7 +83,10 @@ class multigrid_conv2d_v1(nn.Module):
     x_restricted = self.restriction(x, self.N)[::-1]
 
     x = x_restricted[0]
-    y = torch.zeros((x.shape[0], x.shape[1], x.shape[2]//2, x.shape[3]//2))
+    if self.psi_init is None:
+      self.psi_init = torch.zeros((x.shape[0], x.shape[1], x.shape[2]//2, x.shape[3]//2)).to('cuda' if torch.cuda.is_available() else 'cpu')
+    y = self.psi_init
+    print('y: ', y.is_cuda)
 
     for (cnn_i, x_i) in zip(self.layers, x_restricted):
       
@@ -105,7 +111,7 @@ class multigrid_conv2d_v2(multigrid_conv2d_v1):
     
     padding = self.kernel_size - 1
     self.cnn = nn.Conv2d(2 * self.in_channels, self.in_channels, self.kernel_size, padding = padding, padding_mode = self.padding_mode)
-    super(multigrid_conv2d_v1, self).add_module('MGCNN_ws_layer', self.cnn)
+    super(multigrid_conv2d_v2, self).add_module('MGCNN_ws_layer', self.cnn)
 
     return self.cnn
 
@@ -114,11 +120,14 @@ class multigrid_conv2d_v2(multigrid_conv2d_v1):
     x_restricted = self.restriction(x, self.N)[::-1]
 
     x = x_restricted[0]
-    y = torch.zeros(x.shape[0], x.shape[1], x.shape[2]//2, x.shape[3]//2)
+    if self.psi_init is None:
+      self.psi_init = torch.zeros((x.shape[0], x.shape[1], x.shape[2]//2, x.shape[3]//2)).to('cuda' if torch.cuda.is_available() else 'cpu')
+    y = self.psi_init
+    print('y: ', y.is_cuda)
 
     for x_i in x_restricted:
       
-      y_prolongated = self.prolongate(y)
+      y_prolongated = self.prolongate(y).requires_grad_()
 
       #Input to the network (x, y) channels
       inp_to_net = torch.cat([x_i, y_prolongated], 1)

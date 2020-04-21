@@ -101,7 +101,7 @@ def train(model, data_loader, opt):
   avg_loss = 0
   for batch_idx, (data, target) in enumerate(data_loader):
     if args.cuda:
-      data, target = data.cuda(), target.cuda()
+      data, target = data.to(device), target.to(device)
     opt.zero_grad()
     output = model(data)
     loss = compute_loss(target, output)
@@ -117,6 +117,8 @@ def test(model, data_loader, scheduler):
 
   loss = 0
   for batch_idx, (data, target) in enumerate(data_loader):
+    if args.cuda:
+      data, target = data.to(device), target.to(device)
     output = model(data)
     loss += compute_loss(target, output).item()
 
@@ -139,12 +141,13 @@ if __name__ == '__main__':
   #Loading Model
   model = MG_v2(3, 1)
   if args.cuda:
+    device = 'cuda'
     if torch.cuda.device_count() > 1:
       model = nn.DataParallel(model)
       print("Using ", torch.cuda.device_count(), " GPUs!")
     # Move model to GPU.
-    model.cuda()
-  writer.add_graph(model,next(iter(train_dataloader))[0])
+    model.to(device)
+  writer.add_graph(model,next(iter(train_dataloader))[0].to(device))
   writer.close()
 
   #Get an optimizer
