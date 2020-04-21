@@ -145,8 +145,10 @@ if __name__ == '__main__':
     if torch.cuda.device_count() > 1:
       model = nn.DataParallel(model)
       print("Using ", torch.cuda.device_count(), " GPUs!")
-    # Move model to GPU.
-    model.to(device)
+  else:
+    device = 'cpu'
+  # Move model to GPU.
+  model.to(device)
   writer.add_graph(model,next(iter(train_dataloader))[0].to(device))
   writer.close()
 

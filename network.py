@@ -68,8 +68,7 @@ class multigrid_conv2d_v1(nn.Module):
     Outputs x prolongated to a level above.
     '''
     inp = x.repeat(1, 1, 2, 3)[:, :, :x.shape[2]+1, :x.shape[3]+1]
-    inp_h = nn.functional.upsample(inp, size=None, scale_factor=2, mode='nearest', align_corners=None) 
-    print('inp_h: ', inp_h.is_cuda)
+    inp_h = nn.functional.interpolate(x, size=None, scale_factor=2, mode='nearest', align_corners=None) 
     
     inp_h[:,:,::2,::2] = inp[:,:,:-1,:-1]
     inp_h[:,:,::2,1::2] = 0.5 * (inp[:,:,:-1,:-1] + inp[:,:,:-1,1:])
@@ -83,10 +82,7 @@ class multigrid_conv2d_v1(nn.Module):
     x_restricted = self.restriction(x, self.N)[::-1]
 
     x = x_restricted[0]
-    if self.psi_init is None:
-      self.psi_init = torch.zeros((x.shape[0], x.shape[1], x.shape[2]//2, x.shape[3]//2)).to('cuda' if torch.cuda.is_available() else 'cpu')
-    y = self.psi_init
-    print('y: ', y.is_cuda)
+    y = torch.zeros((x.shape[0], x.shape[1], x.shape[2]//2, x.shape[3]//2)).to('cuda' if torch.cuda.is_available() else 'cpu')
 
     for (cnn_i, x_i) in zip(self.layers, x_restricted):
       
@@ -111,19 +107,13 @@ class multigrid_conv2d_v2(multigrid_conv2d_v1):
     
     padding = self.kernel_size - 1
     self.cnn = nn.Conv2d(2 * self.in_channels, self.in_channels, self.kernel_size, padding = padding, padding_mode = self.padding_mode)
-    super(multigrid_conv2d_v2, self).add_module('MGCNN_ws_layer', self.cnn)
-
-    return self.cnn
 
   def forward(self, x):
     
     x_restricted = self.restriction(x, self.N)[::-1]
 
     x = x_restricted[0]
-    if self.psi_init is None:
-      self.psi_init = torch.zeros((x.shape[0], x.shape[1], x.shape[2]//2, x.shape[3]//2)).to('cuda' if torch.cuda.is_available() else 'cpu')
-    y = self.psi_init
-    print('y: ', y.is_cuda)
+    y = torch.zeros((x.shape[0], x.shape[1], x.shape[2]//2, x.shape[3]//2)).to('cuda' if torch.cuda.is_available() else 'cpu')
 
     for x_i in x_restricted:
       
