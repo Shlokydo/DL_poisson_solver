@@ -17,8 +17,8 @@ from network import MG_v1, MG_v2, regular_cnn
 
 # Training settings
 parser = argparse.ArgumentParser(description='MultiGrid ConvNet Training')
-parser.add_argument('--batch-size', type=int, default=100, metavar='batch_size',
-                    help='input batch size for training (default: 64)')
+parser.add_argument('--batch-size', type=int, default=512, metavar='batch_size',
+                    help='input batch size for training (default: 256)')
 parser.add_argument('--grid-size', type=int, default=128, metavar='grid_size',
                     help='input grid size for training (default: 128)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
@@ -63,7 +63,7 @@ def dataloader(grid_size):
   #Main dataset
   bxdata = bxDataset(grid_size=grid_size)
   #Creating a subset for actual training
-  num_samples = 2000
+  num_samples = 6000
   sub_bxdata = torch.utils.data.Subset(bxdata, np.random.permutation(len(bxdata))[:num_samples])
 
   #Create a train val dataset 
@@ -131,7 +131,7 @@ if __name__ == '__main__':
   args.cuda = not args.no_cuda and torch.cuda.is_available()
 
   # Initializing Tensorboard SummaryWriter
-  writer = SummaryWriter('./MGConv_summary') 
+  writer = SummaryWriter('./mgconv_summary') 
 
   # Limit # of CPU threads to be used per worker.
   torch.set_num_threads(1)
@@ -139,7 +139,7 @@ if __name__ == '__main__':
   train_dataloader, val_dataloader = dataloader(args.grid_size)
 
   #Loading Model
-  model = MG_v2(3, 1)
+  model = MG_v1(3, 1)
   if args.cuda:
     device = 'cuda'
     if torch.cuda.device_count() > 1:
@@ -147,10 +147,15 @@ if __name__ == '__main__':
       print("Using ", torch.cuda.device_count(), " GPUs!")
   else:
     device = 'cpu'
-  # Move model to GPU.
+
+  # Move model to device.
   model.to(device)
-  writer.add_graph(model,next(iter(train_dataloader))[0].to(device))
-  writer.close()
+  #print(model)
+  num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+  print('The number of parameters of model is', num_params)
+
+  #writer.add_graph(model,torch.ones(2, 1, 16, 16).to(device))
+  #writer.close()
 
   #Get an optimizer
   opt, sch = optimizer_scheduler(model.parameters(), args.lr)
@@ -165,6 +170,6 @@ if __name__ == '__main__':
     if (loss_min > test_loss):
       loss_min = test_loss
       print('Saving model: {}'.format(loss_min))
-      torch.save(model.state_dict(), './MG_model.ckp')
+      torch.save(model.state_dict(), './mg_model.ckp')
     writer.add_scalars('MSELoss', {'Train': loss, 'Test': test_loss}, global_step=epoch, walltime=None)
     writer.close()

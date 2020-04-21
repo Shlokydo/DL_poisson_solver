@@ -14,7 +14,8 @@ class multigrid_conv2d_v1(nn.Module):
     
     self.in_channels, self.kernel_size, self.N = in_channels, kernel_size, N
     self.padding_mode = padding_mode
-    self.generate_layers()
+
+    self.layers = nn.ModuleList(self.generate_layers())
     
     #Stuff for restriction operation
     self.restriction_stencil = np.asarray([[1, 2, 1], [2, 4, 2], [1, 2, 1]])/16
@@ -36,17 +37,15 @@ class multigrid_conv2d_v1(nn.Module):
     self.register_buffer('psi_init', None)
 
   def generate_layers(self):
-    
-    self.layers = []
+    #Generating model layers
+    layers = []
     padding = self.kernel_size - 1
 
     for i in range(self.N+1):
       cnn = nn.Conv2d(2 * self.in_channels, self.in_channels, self.kernel_size, padding = padding, padding_mode = self.padding_mode)
-
-      super(multigrid_conv2d_v1, self).add_module('MGCNN_layer_' + str(i), cnn)
-      self.layers.append(cnn)
-
-    return self.layers
+      layers.append(cnn)
+    
+    return layers
 
   def restriction(self, x, N):
     '''
@@ -101,12 +100,9 @@ class multigrid_conv2d_v2(multigrid_conv2d_v1):
   def __init__(self, in_channels, kernel_size, N, padding_mode = 'circular'):
     super(multigrid_conv2d_v2, self).__init__(in_channels, kernel_size, N, padding_mode = 'circular')
 
-    self.generate_layers()
-
-  def generate_layers(self):
-    
     padding = self.kernel_size - 1
-    self.cnn = nn.Conv2d(2 * self.in_channels, self.in_channels, self.kernel_size, padding = padding, padding_mode = self.padding_mode)
+    cnn = nn.Conv2d(2 * self.in_channels, self.in_channels, self.kernel_size, padding = padding, padding_mode = self.padding_mode)
+    self.layers = nn.ModuleList([cnn])
 
   def forward(self, x):
     
@@ -121,7 +117,7 @@ class multigrid_conv2d_v2(multigrid_conv2d_v1):
 
       #Input to the network (x, y) channels
       inp_to_net = torch.cat([x_i, y_prolongated], 1)
-      y = nn.Tanh()(self.cnn(inp_to_net))
+      y = nn.Tanh()(self.layers[0](inp_to_net))
 
     return y
 
@@ -159,11 +155,12 @@ class regular_cnn(nn.Module):
   def __init__(self, kernel_size, L):
     super(regular_cnn, self).__init__()
 
-    self.layers = []
+    layers = []
     for i in range(L):
       l = nn.Conv2d(1, 1, kernel_size, padding_mode = 'circular', padding = kernel_size-1)
-      self.layers.append(l)
-      super(regular_cnn, self).add_module('RegCNN_layer_' + str(i), l)
+      layers.append(l)
+
+    self.layers = nn.ModuleList(layers)
 
   def forward(self, x):
 
