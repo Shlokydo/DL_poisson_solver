@@ -18,7 +18,7 @@ from network import MG_v1, MG_v2, regular_cnn
 # Training settings
 parser = argparse.ArgumentParser(description='MultiGrid ConvNet Training')
 parser.add_argument('--batch-size', type=int, default=512, metavar='batch_size',
-                    help='input batch size for training (default: 256)')
+                    help='input batch size for training (default: 512)')
 parser.add_argument('--grid-size', type=int, default=128, metavar='grid_size',
                     help='input grid size for training (default: 128)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
@@ -63,11 +63,11 @@ def dataloader(grid_size):
   #Main dataset
   bxdata = bxDataset(grid_size=grid_size)
   #Creating a subset for actual training
-  num_samples = 6000
+  num_samples = len(bxdata) - (len(bxdata) % args.batch_size)
   sub_bxdata = torch.utils.data.Subset(bxdata, np.random.permutation(len(bxdata))[:num_samples])
 
   #Create a train val dataset 
-  val_percent = 0.2
+  val_percent = 0.34
   split = int(len(sub_bxdata) * val_percent)
   train_data, val_data = torch.utils.data.random_split(sub_bxdata, [len(sub_bxdata) - split, split]) 
 
@@ -131,7 +131,7 @@ if __name__ == '__main__':
   args.cuda = not args.no_cuda and torch.cuda.is_available()
 
   # Initializing Tensorboard SummaryWriter
-  writer = SummaryWriter('./mgconv_summary') 
+  writer = SummaryWriter('./2vmgconv_summary') 
 
   # Limit # of CPU threads to be used per worker.
   torch.set_num_threads(1)
@@ -139,7 +139,7 @@ if __name__ == '__main__':
   train_dataloader, val_dataloader = dataloader(args.grid_size)
 
   #Loading Model
-  model = MG_v1(3, 1)
+  model = MG_v2(6, 3, 8)
   if args.cuda:
     device = 'cuda'
     if torch.cuda.device_count() > 1:
@@ -158,7 +158,8 @@ if __name__ == '__main__':
   #writer.close()
 
   #Get an optimizer
-  opt, sch = optimizer_scheduler(model.parameters(), args.lr)
+  lr = args.lr * args.batch_size / (512 * torch.cuda.device_count())
+  opt, sch = optimizer_scheduler(model.parameters(), lr)
 
   loss_min = 100
   for epoch in range(1, args.epochs + 1):
@@ -170,6 +171,6 @@ if __name__ == '__main__':
     if (loss_min > test_loss):
       loss_min = test_loss
       print('Saving model: {}'.format(loss_min))
-      torch.save(model.state_dict(), './mg_model.ckp')
+      torch.save(model.state_dict(), './2vmg_model.ckp')
     writer.add_scalars('MSELoss', {'Train': loss, 'Test': test_loss}, global_step=epoch, walltime=None)
     writer.close()
