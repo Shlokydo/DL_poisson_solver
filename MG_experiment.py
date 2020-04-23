@@ -19,6 +19,8 @@ from network import MG_v1, MG_v2, regular_cnn
 parser = argparse.ArgumentParser(description='MultiGrid ConvNet Training')
 parser.add_argument('--batch-size', type=int, default=512, metavar='batch_size',
                     help='input batch size for training (default: 512)')
+parser.add_argument('--test-batch-size', type=int, default=2048, metavar='batch_size',
+                    help='input batch size for training (default: 2048)')
 parser.add_argument('--grid-size', type=int, default=128, metavar='grid_size',
                     help='input grid size for training (default: 128)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
@@ -33,14 +35,14 @@ class bxDataset(Dataset):
 
   def __init__(self, location = './Dataset_AD.h5', grid_size = 128):
     #HDF5 file object
-    data = h5py.File('./Dataset_AD.h5')
+    data = h5py.File('./Dataset_AD.h5', 'r')
     
     self.grid_size = grid_size
-    self.om = data['omega_' + str(grid_size)]
-    self.psi = data['psi_' + str(grid_size)]
+    self.om = np.asarray(data['omega_' + str(grid_size)])
+    self.psi = np.asarray(data['psi_' + str(grid_size)])
 
   def __len__(self):
-    return self.om.len()
+    return len(self.om)
 
   def __getitem__(self, idx):
     if torch.is_tensor(idx):
@@ -67,7 +69,7 @@ def dataloader(grid_size):
   sub_bxdata = torch.utils.data.Subset(bxdata, np.random.permutation(len(bxdata))[:num_samples])
 
   #Create a train val dataset 
-  split = args.batch_size
+  split = args.test_batch_size
   train_data, val_data = torch.utils.data.random_split(sub_bxdata, [len(sub_bxdata) - split, split]) 
 
   #Create samplers (Need for Horovod practice)
@@ -76,7 +78,7 @@ def dataloader(grid_size):
 
   #Create DataLoader
   train_dataloader = DataLoader(train_data, sampler = train_sampler, batch_size = args.batch_size, drop_last = True, pin_memory= True)
-  val_dataloader = DataLoader(val_data, sampler = val_sampler, batch_size = args.batch_size, drop_last = True, pin_memory= True)
+  val_dataloader = DataLoader(val_data, sampler = val_sampler, batch_size = args.test_batch_size, drop_last = True, pin_memory= True)
 
   return train_dataloader, val_dataloader
 
@@ -86,7 +88,7 @@ def optimizer_scheduler(params, lr):
   Returns an optimizer and its scheduler
   '''
   optimizer = optim.Adam(params, lr=lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
-  scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20, verbose=True, threshold=0.0001, threshold_mode='rel', cooldown=10, min_lr=0, eps=1e-08)
+  scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.8, patience=20, verbose=True, threshold=0.0001, threshold_mode='rel', cooldown=5, min_lr=0, eps=1e-08)
   return optimizer, scheduler
 
 def compute_loss(data, target):
@@ -130,7 +132,7 @@ if __name__ == '__main__':
   args.cuda = not args.no_cuda and torch.cuda.is_available()
 
   # Initializing Tensorboard SummaryWriter
-  dir_name = './logs/mgv1_6_3'
+  dir_name = './logs/mgv1_10_3'
   writer = SummaryWriter(dir_name + '/summary') 
 
   # Limit # of CPU threads to be used per worker.
@@ -139,7 +141,7 @@ if __name__ == '__main__':
   train_dataloader, val_dataloader = dataloader(args.grid_size)
 
   #Loading Model
-  kernel_size = 6
+  kernel_size = 10
   levels = 3
   depth = 8
   model = MG_v1(kernel_size, levels, depth)
@@ -168,6 +170,7 @@ if __name__ == '__main__':
   train_loss = 0
   start_time = time.time()
   for epoch in range(1, args.epochs + 1):
+    epoch_time = time.time()
     print('\nStart of Epoch: ', epoch)
     loss = train(model, train_dataloader, opt)
     print('Avg. training loss at end of epoch ', epoch, '  : ', loss)
@@ -180,6 +183,7 @@ if __name__ == '__main__':
       torch.save(model.state_dict(), dir_name + '/model.ckp')
     writer.add_scalars('MSELoss', {'Train': loss, 'Test': test_loss}, global_step=epoch, walltime=None)
     writer.close()
+    print('Epoch time: ', time.time() - epoch_time)
   end_time = (time.time()-start_time)/60
   print('Total training time (in minutes): ', end_time)
   writer.add_hparams(hparam_dict = {'LR':lr, 'Model': dir_name, 'Kernel_size': kernel_size, 'Levels': levels, 'Num_kernels': depth, 'Epochs': epoch}, metric_dict = {'hparam/Train_loss': train_loss, 'hparam/Val_loss': loss_min, 'hparam/Time': end_time})

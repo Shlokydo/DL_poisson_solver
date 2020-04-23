@@ -33,9 +33,6 @@ class multigrid_conv2d_v1(nn.Module):
     self.prolongate_conv.weight = nn.Parameter(data = torch.tensor(self.prolongate_stencil).float(), requires_grad = False)
     self.prolongate_conv.bias = nn.Parameter(data = torch.zeros(self.in_channels).float(), requires_grad = False)
 
-    #Resgistering buffer for psi_init
-    self.register_buffer('psi_init', None)
-
   def generate_layers(self):
     #Generating model layers
     layers = []
