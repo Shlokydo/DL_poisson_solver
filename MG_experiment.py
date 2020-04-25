@@ -88,7 +88,7 @@ def optimizer_scheduler(params, lr):
   Returns an optimizer and its scheduler
   '''
   optimizer = optim.Adam(params, lr=lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
-  scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.8, patience=20, verbose=True, threshold=0.0001, threshold_mode='rel', cooldown=5, min_lr=0, eps=1e-08)
+  scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10, verbose=True, threshold=0.0001, threshold_mode='rel', cooldown=0, min_lr=0, eps=1e-08)
   return optimizer, scheduler
 
 def compute_loss(data, target):
@@ -158,6 +158,8 @@ if __name__ == '__main__':
   #print(model)
   num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
   print('The number of parameters of model is', num_params)
+  num_train_samples = len(train_dataloader) * args.batch_size
+  print('Number of training samples: ', num_train_samples)
 
   #writer.add_graph(model,torch.ones(2, 1, 16, 16).to(device))
   #writer.close()
@@ -186,6 +188,6 @@ if __name__ == '__main__':
     print('Epoch time: ', time.time() - epoch_time)
   end_time = (time.time()-start_time)/60
   print('Total training time (in minutes): ', end_time)
-  writer.add_hparams(hparam_dict = {'LR':lr, 'Model': dir_name, 'Kernel_size': kernel_size, 'Levels': levels, 'Num_kernels': depth, 'Epochs': epoch}, metric_dict = {'hparam/Train_loss': train_loss, 'hparam/Val_loss': loss_min, 'hparam/Time': end_time})
+  writer.add_hparams(hparam_dict = {'LR':lr, 'Model': dir_name, 'Kernel_size': kernel_size, 'Levels': levels, 'Num_kernels': depth, 'Epochs': epoch, 'Train_samples': num_train_samples}, metric_dict = {'hparam/Train_loss': train_loss, 'hparam/Val_loss': loss_min, 'hparam/Time': end_time})
   writer.flush()
   writer.close()
