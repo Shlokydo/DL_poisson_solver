@@ -118,6 +118,38 @@ class multigrid_conv2d_v2(multigrid_conv2d_v1):
 
     return y
 
+class multigrid_conv2d_v2_1(multigrid_conv2d_v1):
+  '''
+  Adding depth to the CNN on the expense of kernel size
+  '''
+  def __init__(self, in_channels, kernel_size, N, depth, padding_mode = 'circular'):
+    super(multigrid_conv2d_v2_1, self).__init__(in_channels, kernel_size, N, padding_mode = 'circular')
+    
+    self.kernel_size = int(kernel_size / depth)
+    padding = self.kernel_size - 1
+    cnn = nn.Conv2d(2 * self.in_channels, self.in_channels, self.kernel_size, padding = padding, padding_mode = self.padding_mode)
+    cnn_ = nn.Conv2d(1 * self.in_channels, self.in_channels, self.kernel_size, padding = padding, padding_mode = self.padding_mode)
+    self.layers = nn.ModuleList([cnn] + [cnn_] * (depth-1))
+
+  def forward(self, x):
+    
+    x_restricted = self.restriction(x, self.N)[::-1]
+
+    x = x_restricted[0]
+    y = nn.functional.interpolate(torch.zeros_like(x), scale_factor=0.5)
+
+    for x_i in x_restricted:
+      
+      y_prolongated = self.prolongate(y).requires_grad_()
+
+      #Input to the network (x, y) channels
+      inp_to_net = torch.cat([x_i, y_prolongated], 1)
+      y = inp_to_net
+      for i in self.layers:
+        y = nn.Tanh()(i(y))
+
+    return y
+
 class MG_v1(nn.Module):
   '''
   Class encanpsulating multigrid_conv2d_v1
@@ -142,6 +174,14 @@ class MG_v2(MG_v1):
   def __init__(self, kernel_size, levels, split_channels):
     super(MG_v2, self).__init__(kernel_size, levels, split_channels)
     self.MGlayer = multigrid_conv2d_v2(split_channels, kernel_size, levels)
+
+class MG_v2_1(MG_v1):
+  '''
+  Class encanpsulating multigrid_conv2d_v2
+  '''
+  def __init__(self, kernel_size, levels, split_channels, depth):
+    super(MG_v2_1, self).__init__(kernel_size, levels, split_channels)
+    self.MGlayer = multigrid_conv2d_v2_1(split_channels, kernel_size, levels, depth)
 
 class regular_cnn(nn.Module):
   '''

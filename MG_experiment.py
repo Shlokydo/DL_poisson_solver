@@ -8,12 +8,13 @@ import h5py
 import argparse
 import time
 import matplotlib.pyplot as plt
+import os
 
 from torch.utils.data import TensorDataset, DataLoader, Dataset, sampler
 from torch import nn, optim
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import utils
-from network import MG_v1, MG_v2, regular_cnn
+from network import MG_v1, MG_v2, MG_v2_1, regular_cnn
 
 # Training settings
 parser = argparse.ArgumentParser(description='MultiGrid ConvNet Training')
@@ -88,7 +89,7 @@ def optimizer_scheduler(params, lr):
   Returns an optimizer and its scheduler
   '''
   optimizer = optim.Adam(params, lr=lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
-  scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10, verbose=True, threshold=0.0001, threshold_mode='rel', cooldown=0, min_lr=0, eps=1e-08)
+  scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.8, patience=30, verbose=True, threshold=0.0001, threshold_mode='rel', cooldown=0, min_lr=lr * 0.005, eps=1e-08)
   return optimizer, scheduler
 
 def compute_loss(data, target):
@@ -132,7 +133,7 @@ if __name__ == '__main__':
   args.cuda = not args.no_cuda and torch.cuda.is_available()
 
   # Initializing Tensorboard SummaryWriter
-  dir_name = './logs/mgv1_10_3'
+  dir_name = './logs/MGv2_1_10_3'
   writer = SummaryWriter(dir_name + '/summary') 
 
   # Limit # of CPU threads to be used per worker.
@@ -141,10 +142,12 @@ if __name__ == '__main__':
   train_dataloader, val_dataloader = dataloader(args.grid_size)
 
   #Loading Model
-  kernel_size = 10
+  kernel_size = 30
   levels = 3
-  depth = 8
-  model = MG_v1(kernel_size, levels, depth)
+  filters = 5
+  depth = 3
+  model = MG_v2_1(kernel_size, levels, filters, depth)
+  print(model)
   if args.cuda:
     device = 'cuda'
     if torch.cuda.device_count() > 1:
@@ -161,17 +164,26 @@ if __name__ == '__main__':
   num_train_samples = len(train_dataloader) * args.batch_size
   print('Number of training samples: ', num_train_samples)
 
-  #writer.add_graph(model,torch.ones(2, 1, 16, 16).to(device))
-  #writer.close()
-
   #Get an optimizer
-  lr = args.lr * args.batch_size / 512
+  lr = args.lr * args.batch_size / 256
   opt, sch = optimizer_scheduler(model.parameters(), lr)
 
+  epochs = 0
   loss_min = 100
   train_loss = 0
+  if os.path.exists(dir_name + '/model.pth'):
+    checkpoint = torch.load(dir_name + '/model.pth')
+    print('Loading model state from checkpoint.')
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    epoch = checkpoint['epoch']
+    loss_min = checkpoint['loss']
+
+  #writer.add_graph(model,torch.ones(2, 1, 16, 16).to(device))
+  #writer.close()
   start_time = time.time()
-  for epoch in range(1, args.epochs + 1):
+
+  for epoch in range(epochs + 1, epochs + args.epochs + 1):
     epoch_time = time.time()
     print('\nStart of Epoch: ', epoch)
     loss = train(model, train_dataloader, opt)
@@ -182,12 +194,17 @@ if __name__ == '__main__':
       loss_min = test_loss
       train_loss = loss
       print('Saving model\nVal_loss:  {}'.format(loss_min))
-      torch.save(model.state_dict(), dir_name + '/model.ckp')
+      torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': opt.state_dict(),
+            'loss': loss_min,
+            }, dir_name + 'model.pth')
     writer.add_scalars('MSELoss', {'Train': loss, 'Test': test_loss}, global_step=epoch, walltime=None)
     writer.close()
     print('Epoch time: ', time.time() - epoch_time)
   end_time = (time.time()-start_time)/60
   print('Total training time (in minutes): ', end_time)
-  writer.add_hparams(hparam_dict = {'LR':lr, 'Model': dir_name, 'Kernel_size': kernel_size, 'Levels': levels, 'Num_kernels': depth, 'Epochs': epoch, 'Train_samples': num_train_samples}, metric_dict = {'hparam/Train_loss': train_loss, 'hparam/Val_loss': loss_min, 'hparam/Time': end_time})
+  writer.add_hparams(hparam_dict = {'LR':lr, 'Model': dir_name, 'Kernel_size': kernel_size, 'Levels': levels, 'Num_kernels': filters, 'Train_samples': num_train_samples, 'CNN_depth': depth}, metric_dict = {'Train_loss': train_loss, 'Val_loss': loss_min, 'Time': end_time})
   writer.flush()
   writer.close()
