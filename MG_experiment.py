@@ -66,7 +66,8 @@ def dataloader(grid_size):
   #Main dataset
   bxdata = bxDataset(grid_size=grid_size)
   #Creating a subset for actual training
-  num_samples = len(bxdata) - (len(bxdata) % args.batch_size)
+  #num_samples = len(bxdata) - (len(bxdata) % args.batch_size)
+  num_samples = args.batch_size * 4 + args.test_batch_size
   sub_bxdata = torch.utils.data.Subset(bxdata, np.random.permutation(len(bxdata))[:num_samples])
 
   #Create a train val dataset 
@@ -89,7 +90,8 @@ def optimizer_scheduler(params, lr):
   Returns an optimizer and its scheduler
   '''
   optimizer = optim.Adam(params, lr=lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
-  scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.8, patience=30, verbose=True, threshold=0.0001, threshold_mode='rel', cooldown=0, min_lr=lr * 0.005, eps=1e-08)
+  #scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.8, patience=30, verbose=True, threshold=0.0001, threshold_mode='rel', cooldown=0, min_lr=lr * 0.005, eps=1e-08)
+  scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0 = 10, T_mult=2, eta_min=0, last_epoch=-1)
   return optimizer, scheduler
 
 def compute_loss(data, target):
@@ -97,10 +99,11 @@ def compute_loss(data, target):
   criterion = nn.MSELoss()
   return criterion(data, target)
 
-def train(model, data_loader, opt):
+def train(model, data_loader, opt, scheduler, epoch):
   model.train()
 
   avg_loss = 0
+  iters = len(data_loader)
   for batch_idx, (data, target) in enumerate(data_loader):
     if args.cuda:
       data, target = data.to(device), target.to(device)
@@ -110,6 +113,7 @@ def train(model, data_loader, opt):
     avg_loss += loss.item()
     loss.backward()
     opt.step()
+    scheduler.step(epoch + batch_idx / iters)
 
   avg_loss /= len(data_loader)
   return avg_loss
@@ -125,7 +129,7 @@ def test(model, data_loader, scheduler):
     loss += compute_loss(target, output).item()
 
   loss /= len(data_loader)
-  scheduler.step(loss)
+  #scheduler.step(loss)
   return loss
 
 if __name__ == '__main__':
@@ -133,7 +137,7 @@ if __name__ == '__main__':
   args.cuda = not args.no_cuda and torch.cuda.is_available()
 
   # Initializing Tensorboard SummaryWriter
-  dir_name = './logs/MGv2_1_10_3'
+  dir_name = './logs/MGv2_10_3_5'
   writer = SummaryWriter(dir_name + '/summary') 
 
   # Limit # of CPU threads to be used per worker.
@@ -142,11 +146,11 @@ if __name__ == '__main__':
   train_dataloader, val_dataloader = dataloader(args.grid_size)
 
   #Loading Model
-  kernel_size = 30
+  kernel_size = 10
   levels = 3
   filters = 5
-  depth = 3
-  model = MG_v2_1(kernel_size, levels, filters, depth)
+  depth = 0
+  model = MG_v2(kernel_size, levels, filters)
   print(model)
   if args.cuda:
     device = 'cuda'
@@ -165,7 +169,7 @@ if __name__ == '__main__':
   print('Number of training samples: ', num_train_samples)
 
   #Get an optimizer
-  lr = args.lr * args.batch_size / 256
+  lr = args.lr * args.batch_size / 512
   opt, sch = optimizer_scheduler(model.parameters(), lr)
 
   epochs = 0
@@ -175,8 +179,8 @@ if __name__ == '__main__':
     checkpoint = torch.load(dir_name + '/model.pth')
     print('Loading model state from checkpoint.')
     model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    epoch = checkpoint['epoch']
+    opt.load_state_dict(checkpoint['optimizer_state_dict'])
+    epochs = checkpoint['epoch']
     loss_min = checkpoint['loss']
 
   #writer.add_graph(model,torch.ones(2, 1, 16, 16).to(device))
@@ -186,7 +190,7 @@ if __name__ == '__main__':
   for epoch in range(epochs + 1, epochs + args.epochs + 1):
     epoch_time = time.time()
     print('\nStart of Epoch: ', epoch)
-    loss = train(model, train_dataloader, opt)
+    loss = train(model, train_dataloader, opt, sch, epoch)
     print('Avg. training loss at end of epoch ', epoch, '  : ', loss)
     test_loss = test(model, val_dataloader, sch)
     print('Avg. validation loss at end of epoch ', epoch, ': ', test_loss)
@@ -199,12 +203,12 @@ if __name__ == '__main__':
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': opt.state_dict(),
             'loss': loss_min,
-            }, dir_name + 'model.pth')
+            }, dir_name + '/model.pth')
     writer.add_scalars('MSELoss', {'Train': loss, 'Test': test_loss}, global_step=epoch, walltime=None)
     writer.close()
     print('Epoch time: ', time.time() - epoch_time)
   end_time = (time.time()-start_time)/60
   print('Total training time (in minutes): ', end_time)
-  writer.add_hparams(hparam_dict = {'LR':lr, 'Model': dir_name, 'Kernel_size': kernel_size, 'Levels': levels, 'Num_kernels': filters, 'Train_samples': num_train_samples, 'CNN_depth': depth}, metric_dict = {'Train_loss': train_loss, 'Val_loss': loss_min, 'Time': end_time})
+  writer.add_hparams(hparam_dict = {'LR':lr, 'Model': dir_name, 'Num_params': num_params, 'Kernel_size': kernel_size, 'Levels': levels, 'Num_kernels': filters, 'Train_samples': num_train_samples, 'CNN_depth': depth}, metric_dict = {'Train_loss': train_loss, 'Val_loss': loss_min, 'Time': end_time})
   writer.flush()
   writer.close()
