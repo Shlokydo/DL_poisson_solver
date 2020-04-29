@@ -150,12 +150,12 @@ class multigrid_conv2d_v2_1(multigrid_conv2d_v1):
 
     return y
 
-class MG_v1(nn.Module):
+class MGv1(nn.Module):
   '''
   Class encanpsulating multigrid_conv2d_v1
   '''
   def __init__(self, kernel_size, levels, split_channels):
-    super(MG_v1, self).__init__()
+    super(MGv1, self).__init__()
 
     self.input_conv = nn.Conv2d(1, split_channels, kernel_size, padding = kernel_size-1, padding_mode = 'circular')
     self.MGlayer = multigrid_conv2d_v1(split_channels, kernel_size, levels)
@@ -167,20 +167,20 @@ class MG_v1(nn.Module):
     x = nn.Tanh()(self.MGlayer(x))
     return self.output_conv(x)
 
-class MG_v2(MG_v1):
+class MGv2(MGv1):
   '''
   Class encanpsulating multigrid_conv2d_v2
   '''
   def __init__(self, kernel_size, levels, split_channels):
-    super(MG_v2, self).__init__(kernel_size, levels, split_channels)
+    super(MGv2, self).__init__(kernel_size, levels, split_channels)
     self.MGlayer = multigrid_conv2d_v2(split_channels, kernel_size, levels)
 
-class MG_v2_1(MG_v1):
+class MGv2_1(MGv1):
   '''
   Class encanpsulating multigrid_conv2d_v2
   '''
   def __init__(self, kernel_size, levels, split_channels, depth):
-    super(MG_v2_1, self).__init__(kernel_size, levels, split_channels)
+    super(MGv2_1, self).__init__(kernel_size, levels, split_channels)
     self.MGlayer = multigrid_conv2d_v2_1(split_channels, kernel_size, levels, depth)
 
 class regular_cnn(nn.Module):
