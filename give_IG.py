@@ -1,6 +1,8 @@
 import torch
 torch.manual_seed(0)
 
+import numpy as np
+
 import os
 import sys
 
@@ -35,7 +37,7 @@ class MGCNN():
       print('Loading Model {} state from checkpoint.'.format(net_type + '_' + '_'.join(str(s) for s in args)))
       state_dict = checkpoint['model_state_dict']
 
-      # create new OrderedDict that does not contain `module.`
+      # create new OrderedDict that does not contain `module.`, as the checkpoint was made with DataParallel
       from collections import OrderedDict
       new_state_dict = OrderedDict()
       for k, v in state_dict.items():
@@ -53,6 +55,6 @@ class MGCNN():
     inp = torch.from_numpy(np.reshape(inp, (1, 1, self.grid_size, self.grid_size))).float().to(self.device)
 
     guess = torch.squeeze(self.model(inp)).detach().cpu().numpy()
-    guess = np.resize(guess, -1)
+    guess = np.reshape(guess, -1)
 
     return guess
