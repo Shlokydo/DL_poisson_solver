@@ -20,10 +20,10 @@ parser.add_argument("--video", '-v', default = 0, type = int, choices = [1, 0], 
 args = parser.parse_args()
 
 #Opening a HDF5 file for writing datasets
-f = h5py.File('Dataset_AD.h5', mode = 'a')
+f = h5py.File('iDataset_AD.h5', mode = 'a')
 
 #Set the number of grid points
-grid_points = 64 * 2
+grid_points = 64 * 2 
 #Set the domain lenght
 domain_length = 20
 #Set the end time
@@ -34,18 +34,15 @@ diff_coef = 0.001
 #Creating Dataset in the HDF5 file
 try:
     p_dataset = f.create_dataset('psi_' + str(grid_points), (1, grid_points * grid_points), maxshape = (None, grid_points * grid_points), dtype = 'float32')
+    w_dataset = f.create_dataset('omega_' + str(grid_points), (1, grid_points * grid_points), maxshape = (None, grid_points * grid_points), dtype = 'float32')
     resize = 0
 except:
     p_dataset = f.get('psi_' + str(grid_points))
+    w_dataset = f.get('omega_' + str(grid_points))
     resize = p_dataset.shape[0]
     print('Current number of samples: ', resize)
 
-try:
-    w_dataset = f.create_dataset('omega_' + str(grid_points), (1, grid_points * grid_points), maxshape = (None, grid_points * grid_points), dtype = 'float32')
-except:
-    w_dataset = f.get('omega_' + str(grid_points))
-
-tspan = np.arange(0, end_time, 0.05)
+tspan = np.arange(0, end_time, 0.10)
 N = int(math.pow(grid_points, 2))
 
 x2 = np.linspace(int(-domain_length/2), int(domain_length/2), grid_points + 1)
@@ -55,14 +52,14 @@ y = x
 X, Y = np.meshgrid(x, y, indexing = 'ij')
 
 #w_init = np.exp(-2 * np.power(X, 2) - (np.power(Y, 2) / 10)) 
-w_init = np.exp(-2 * np.power(X - 3, 2) - (np.power(Y, 2) / 10)) - np.exp(-1 * np.power(X + 4, 2) / 20 - 2 * (np.power(Y - 2, 2))) + np.exp(-1 * np.power(X + 5, 2) / 20 - 2 * (np.power(Y - 8, 2)))
-#w_init = 0.1 * (X + Y) * w_init
+#w_init = w_init * np.exp(-2 * np.power(X - 3, 2) - (np.power(Y, 2) / 10)) - np.exp(-1 * np.power(X + 4, 2) / 20 - 2 * (np.power(Y - 2, 2))) + np.exp(-1 * np.power(X + 5, 2) / 20 - 2 * (np.power(Y - 8, 2)))
+#w_init = 4 * w_init + 0.05 * (X)
 #w_init = (np.sin(X) + np.tanh(X * Y))
 # w_init = np.exp(-0.25 * np.power(X-5, 2) - 2 * (np.power(Y, 2))) - np.exp(-0.25 * np.power(X+5, 2) - 2 * (np.power(Y, 2)))
-w_init = w_init * ((np.power(0.1 * X, 2) + np.power(0.1 * Y, 2)))
-w_init = w_init * (np.power(0.1 * X, 2) + np.power(0.1 * Y, 5)) + np.cos(X) * np.sin(Y) * np.tan(0.1 * X)
-w_init = w_init * (np.sinc(Y)) * np.cos(Y) 
-w_init = w_init * np.cos(Y) 
+#w_init = w_init * ((np.power(0.1 * X, 3) + np.power(0.1 * Y, 3)))
+#w_init = w_init * (np.power(0.1 * X, 2) + np.power(0.1 * Y, 5)) + np.cos(X) * np.sin(Y) * np.tan(0.1 * X)
+#w_init = w_init + (np.sinc(w_init)) + np.cos(Y) 
+w_init = np.cos(Y) + np.sin(X) 
 w_init = np.reshape(w_init, N)
 
 if args.order == 2:
@@ -139,16 +136,13 @@ elif args.order == 4:
     #plt.show()
 
 # sol = methods.inv(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
-# sol, cg_count = methods.cg_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
-# sol, gmres_count = methods.gmres_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
-# sol, bicgstab_count = methods.bicgstab_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
-sol, psi_r, omega_r = methods.fft_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, grid_points, N, domain_length)
-# # print(cg_count)
+#sol, psi_r, omega_r = methods.fft_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, grid_points, N, domain_length)
+sol, count, psi_r, omega_r = methods.iterative_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, solver_name = 'lgmres')
 
 if args.save:
   temp = resize
-  num_samples = len(tspan) * 3
-  if len(psi_r) < num_samples:
+  num_samples = len(psi_r)
+  if len(psi_r) <= num_samples:
       tmp = 1
       resize += len(psi_r)
       print('Number of samples to be added: ', resize - temp)
@@ -162,8 +156,10 @@ if args.save:
   w_dataset.resize((resize, grid_points * grid_points))
 
   #Appending data to HDF5 datasets
-  p_dataset[temp:] = np.asarray(psi_r)[::tmp]
-  w_dataset[temp:] = np.asarray(omega_r)[::tmp]
+  psi = np.asarray(psi_r)[::tmp]
+  omega = np.asarray(omega_r)[::tmp]
+  p_dataset[temp:] = psi 
+  w_dataset[temp:] = omega
   f.attrs['Samples'] = resize
   print('Total number of samples: ', resize)
 
@@ -171,6 +167,10 @@ if args.save:
   print('Saving in HDF5 file.')
   f.flush()
   f.attrs['delta_x'] = delta_x
+  f.attrs['omega_max'] = omega.max()
+  f.attrs['omega_min'] = omega.min()
+  f.attrs['psi_max'] = psi.max()
+  f.attrs['psi_min'] = psi.min()
 f.close()
  
 print('Time stepper count: ', len(psi_r))
@@ -198,7 +198,7 @@ def make_animation(inputs, name):
     print(f'\nSaving Animation: {name}.mp4\n')
     anim.save(name + '.mp4', fps=20, extra_args=['-vcodec', 'libx264'], dpi = 50)
 
-y = [(sol.y[:,i] - sol.y[:,i].mean())/sol.y[:,i].std() for i in range(40)]
+y = [sol.y[:,i] for i in range(len(tspan))]
 if args.video:
   make_animation(y, 't_advec_diff')
-# make_animation(psi_r, 't_random0')
+  make_animation(psi_r, 't_random0')

@@ -4,9 +4,15 @@ from scipy.sparse import spdiags
 import scipy.linalg as sl
 from scipy.integrate import solve_ivp
 import scipy.sparse
+from scipy.sparse.linalg import cg, gmres, bicgstab, lgmres
+
+import sys
 
 count = 0
 
+def get_solver(solver):
+    return getattr(sys.modules[__name__], solver)
+    
 def counter(x):
     global count
     count = count + 1
@@ -76,68 +82,29 @@ def fft_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, n, N, L):
 
     return sol, psi_return, omega_return
 
-def cg_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef):
+def iterative_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, solver_name='lgmres'):
 
-    print("\nDoining the CG solver\n")
+    print("\nUsing {} solver\n".format(solver_name))
+    solver = get_solver(solver_name) 
     
     counter_list = []
+    psi_return = []
+    omega_return = []
+    A_inv = scipy.sparse.linalg.inv(scipy.sparse.diags(A.diagonal(), 0))
 
     def stepper(t, w, dx, A, Dx, Dy, nu):
         global count
         cb = lambda x: counter(x)
         
         count = 0
-        cgs, _ = scipy.sparse.linalg.cg(A, w, tol = 1e-5, maxiter=200, callback=cb)
+        psi, _ = solver(A, w, tol = 1e-5, callback=cb, M=A_inv)
         counter_list.append(count)
-        psi = math.pow(dx, 2) * cgs
-        psi = psi - np.min(psi)
+        #psi = psi - np.min(psi)
+        psi_return.append(psi)
+        omega_return.append(w)
 
         return matmuls(psi, w, dx, A, Dx, Dy, nu)
 
-    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', t_eval= tspan, args = (delta_x, A, Dx, Dy, diff_coef), first_step = 0.5)
+    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', args = (delta_x, A, Dx, Dy, diff_coef), first_step = 0.5, t_eval=tspan)
 
-    return sol, counter_list
-
-def gmres_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef):
-
-    print("\nDoining the GMRES solver\n")
-    
-    counter_list = []
-
-    def stepper(t, w, dx, A, Dx, Dy, nu):
-        global count
-        cb = lambda x: counter(x)
-        
-        count = 0
-        cgs, _ = scipy.sparse.linalg.gmres(A, w, tol = 1e-5, maxiter=1000, callback=cb)
-        counter_list.append(count)
-        psi = math.pow(dx, 2) * cgs
-        psi = psi - np.min(psi)
-        
-        return matmuls(psi, w, dx, A, Dx, Dy, nu)
-
-    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', t_eval= tspan, args = (delta_x, A, Dx, Dy, diff_coef), first_step = 0.5)
-
-    return sol, counter_list
-
-def bicgstab_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef):
-
-    print("\nDoining the BICGSTAB solver\n")
-    
-    counter_list = []
-
-    def stepper(t, w, dx, A, Dx, Dy, nu):
-        global count
-        cb = lambda x: counter(x)
-        
-        count = 0
-        cgs, _ = scipy.sparse.linalg.bicgstab(A, w, tol = 1e-5, maxiter=1000, callback=cb)
-        counter_list.append(count)
-        psi = math.pow(dx, 2) * cgs
-        psi = psi - np.min(psi)
-
-        return matmuls(psi, w, dx, A, Dx, Dy, nu)
-
-    sol = solve_ivp(stepper, (0, end_time), y0= w_init, method='RK45', t_eval= tspan, args = (delta_x, A, Dx, Dy, diff_coef), first_step = 0.5)
-
-    return sol, counter_list
+    return sol, counter_list, psi_return, omega_return
