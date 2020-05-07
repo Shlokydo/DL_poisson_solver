@@ -6,12 +6,29 @@ from scipy.integrate import solve_ivp
 import scipy.sparse
 from scipy.sparse.linalg import cg, gmres, bicgstab, lgmres
 
+from pyamg.aggregation import smoothed_aggregation_solver
+from pyamg import ruge_stuben_solver
+
 import sys
 
 count = 0
+initial_guess = 0
 
-def get_solver(solver):
+def get_module(solver):
     return getattr(sys.modules[__name__], solver)
+
+def AMG(A):
+    ml = smoothed_aggregation_solver(A)            # AMG solver
+    M = ml.aspreconditioner(cycle='V')             # preconditioner
+    return M
+
+def Jacobi(A):
+    return scipy.sparse.linalg.inv(scipy.sparse.diags(A.diagonal(), 0))
+
+def amg_solver(A):
+    ml = smoothed_aggregation_solver(A, max_levels=10, coarse_solver = 'jacobi')
+    print(ml)
+    return ml
     
 def counter(x):
     global count
@@ -71,7 +88,6 @@ def fft_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, n, N, L):
 
         psi = np.multiply(-np.fft.fft2(np.reshape(w, (n, n))), K3) 
         psi = np.reshape(np.real(np.fft.ifft2(psi)), N)  
-        psi = psi - np.min(psi)
         
         psi_return.append(psi)
         omega_return.append(w)
@@ -82,24 +98,39 @@ def fft_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, n, N, L):
 
     return sol, psi_return, omega_return
 
-def iterative_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, solver_name='lgmres'):
+def iterative_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, solver_name='lgmres', guess = False, precond = 'AMG'):
 
     print("\nUsing {} solver\n".format(solver_name))
-    solver = get_solver(solver_name) 
+    solver = get_module(solver_name) 
+    try:
+        ml = solver(A)
+    except:
+        pass
     
     counter_list = []
     psi_return = []
     omega_return = []
-    A_inv = scipy.sparse.linalg.inv(scipy.sparse.diags(A.diagonal(), 0))
+
+    preconditioner = get_module(precond)
+    M = preconditioner(A)
+    
+    global initial_guess
+    initial_guess = np.zeros_like(w_init)
 
     def stepper(t, w, dx, A, Dx, Dy, nu):
-        global count
+        global count, initial_guess
         cb = lambda x: counter(x)
         
         count = 0
-        psi, _ = solver(A, w, tol = 1e-5, callback=cb, M=A_inv)
+        try:
+            psi, _ = solver(A, w, x0 = initial_guess, tol = 1e-5, callback=cb, M=M)
+        except:
+            residuals = []
+            psi = ml.solve(w, x0 = initial_guess, tol=1e-5, callback=cb, cycle = 'V', residuals = residuals, maxiter=1000)
+            print(residuals)
+        if guess:
+            initial_guess = psi
         counter_list.append(count)
-        #psi = psi - np.min(psi)
         psi_return.append(psi)
         omega_return.append(w)
 

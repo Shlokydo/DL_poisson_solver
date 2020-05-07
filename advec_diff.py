@@ -9,6 +9,7 @@ from matplotlib.animation import FuncAnimation
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import h5py
+import time
 import methods
 
 import argparse
@@ -17,6 +18,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--order", '-o', default = 2, type = int, choices = [2, 4], help = "Order of the discretization scheme")
 parser.add_argument("--save", '-s', default = 0, type = int, choices = [1, 0], help = "Whether to save in HDF5 file or not")
 parser.add_argument("--video", '-v', default = 0, type = int, choices = [1, 0], help = "Whether to save video file or not")
+parser.add_argument("--method", '-m', default = 'lgmres', type = str, choices = ['cg', 'lgmres', 'bicgstab', 'gmres', 'amg_solver'], help = "Solver to use")
+parser.add_argument("--precond", '-p', default = 'AMG', type = str, choices = ['AMG', 'Jacobi'], help = "Preconditioner to use")
+parser.add_argument("--guess", '-g', default = False, action='store_true', help = "Whether to use inital guess generated from the network")
 args = parser.parse_args()
 
 #Opening a HDF5 file for writing datasets
@@ -27,7 +31,7 @@ grid_points = 64 * 2
 #Set the domain lenght
 domain_length = 20
 #Set the end time
-end_time = 10
+end_time = 1
 #Set the diffusion coefficient
 diff_coef = 0.001
 
@@ -51,7 +55,7 @@ delta_x = x[1] - x[0]
 y = x
 X, Y = np.meshgrid(x, y, indexing = 'ij')
 
-#w_init = np.exp(-2 * np.power(X, 2) - (np.power(Y, 2) / 10)) 
+w_init = np.exp(-2 * np.power(X, 2) - (np.power(Y, 2) / 10)) 
 #w_init = w_init * np.exp(-2 * np.power(X - 3, 2) - (np.power(Y, 2) / 10)) - np.exp(-1 * np.power(X + 4, 2) / 20 - 2 * (np.power(Y - 2, 2))) + np.exp(-1 * np.power(X + 5, 2) / 20 - 2 * (np.power(Y - 8, 2)))
 #w_init = 4 * w_init + 0.05 * (X)
 #w_init = (np.sin(X) + np.tanh(X * Y))
@@ -59,7 +63,7 @@ X, Y = np.meshgrid(x, y, indexing = 'ij')
 #w_init = w_init * ((np.power(0.1 * X, 3) + np.power(0.1 * Y, 3)))
 #w_init = w_init * (np.power(0.1 * X, 2) + np.power(0.1 * Y, 5)) + np.cos(X) * np.sin(Y) * np.tan(0.1 * X)
 #w_init = w_init + (np.sinc(w_init)) + np.cos(Y) 
-w_init = np.cos(Y) + np.sin(X) 
+#w_init = np.cos(Y) + np.sin(X) 
 w_init = np.reshape(w_init, N)
 
 if args.order == 2:
@@ -135,9 +139,12 @@ elif args.order == 4:
     #plt.spy(Dy, marker = '.', markersize = 2)
     #plt.show()
 
+st = time.time()
 # sol = methods.inv(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef)
 #sol, psi_r, omega_r = methods.fft_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, grid_points, N, domain_length)
-sol, count, psi_r, omega_r = methods.iterative_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, solver_name = 'lgmres')
+sol, count, psi_r, omega_r = methods.iterative_solver(tspan, end_time, w_init, delta_x, A, Dx, Dy, diff_coef, solver_name = args.method, guess = args.guess, precond = args.precond)
+#print(count)
+print('Execution time: ', (time.time() - st)/60)
 
 if args.save:
   temp = resize
@@ -201,4 +208,4 @@ def make_animation(inputs, name):
 y = [sol.y[:,i] for i in range(len(tspan))]
 if args.video:
   make_animation(y, 't_advec_diff')
-  make_animation(psi_r, 't_random0')
+  make_animation(psi_r, 't_random2')
