@@ -33,7 +33,7 @@ class MGCNN():
     self.model.to(self.device)
 
     if os.path.exists(dir_name + '/model.pth'):
-      checkpoint = torch.load(dir_name + '/model.pth')
+      checkpoint = torch.load(dir_name + '/model.pth', map_location = torch.device(self.device))
       print('Loading Model {} state from checkpoint.'.format(net_type + '_' + '_'.join(str(s) for s in args)))
       state_dict = checkpoint['model_state_dict']
 
