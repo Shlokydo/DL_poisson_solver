@@ -3,9 +3,10 @@ import torch
 from torch import nn
 
 import spconv
-from utils_loader import make_symmetric, Spconvec_to_torch
+from utils_loader import make_symmetric, Spconvec_to_torch, to_Spconvec
 
 import time
+from unet_parts import *
 
 def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None, verbose=False):
   """Solves a batch of PD matrix linear systems using the preconditioned CG algorithm.
@@ -33,7 +34,7 @@ def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None, ve
   if M_bmm is None:
     M_bmm = lambda x: x
   if X0 is None:
-    X0 = M_bmm(B)
+    X0 = torch.zeros_like(B)
   if maxiter is None:
     maxiter = 5 * n
 
@@ -126,13 +127,14 @@ class conjugate_gradient_loss(nn.Module):
 
   def forward(self, A_inv, A, b):
 	  
-    A = A.requires_grad_(False)
+    A = A.requires_grad_(False).to_dense()
+    A_inv = A_inv.unsqueeze(0)
 
     def A_bmm(X):
-      return A.bmm(X)
+      return torch.bmm(A, X)
 
     def M_bmm(X):
-      return A_inv.bmm(X)
+      return torch.bmm(A_inv, X)
     
     b = b.unsqueeze(-1).requires_grad_(False)
     x_approx = cg_batch(A_bmm, B=b, M_bmm=M_bmm, rtol=1e-5, atol=1e-5, verbose=False, maxiter = self.iterations).squeeze().requires_grad_(True)	
@@ -145,33 +147,102 @@ class precond_net(nn.Module):
   '''
   Network architecture for Sparse Convolution Network. 
   '''
-  def __init__(self, batch_size):
+  def __init__(self):
     super(precond_net, self).__init__()
     
-    self.batch_size = batch_size
     self.layers = spconv.SparseSequential()
 
-    self.layer.add(spconv.SubMConv2d(1, 64, 1, indice_key="subm1", padding = (1, 1), stride = (1, 1), use_hash=True), 'SubM_1') #[B, 64, W, H]
-    self.layer.add(nn.PReLU())
-    self.layer.add(spconv.SubMConv2d(64, 128, 20, indice_key="subm2", padding = (1, 1), stride = (1, 1), use_hash=True), 'SubM_2') #[B, 128, W, H]
-    self.layer.add(nn.PReLU())
-    self.layer.add(spconv.SparseConv2d(128, 256, 3, padding = (1, 1), stride = (1, 1), use_hash = True), 'SConv_1') #[B, 256, W, H]
-    self.layer.add(nn.PReLU())
-    self.layer.add(spconv.SparseConv2d(256, 512, 3, padding = (1, 1), stride = (1, 1), use_hash = True), 'SConv_2') #[B, 512, W, H]
-    self.layer.add(nn.PReLU())
-    self.layer.add(spconv.SparseConv2d(512, 256, 3, padding = (1, 1), stride = (1, 1), use_hash = True), 'SConv_3') #[B, 256, W, H]
-    self.layer.add(nn.PReLU())
-    self.layer.add(spconv.SparseConv2d(256, 128, 3, padding = (1, 1), stride = (1, 1), use_hash = True), 'SConv_4') #[B, 128, W, H]
-    self.layer.add(nn.PReLU())
-    self.layer.add(spconv.SubMConv2d(128, 64, 20, indice_key="subm3", padding = (1, 1), stride = (1, 1), use_hash=True), 'SubM_3') #[B, 64, W, H]
-    self.layer.add(nn.PReLU())
-    self.layer.add(spconv.SubMConv2d(64, 1, 1, indice_key="subm4", padding = (1, 1), stride = (1, 1), use_hash=True), 'SubM_4') #[B, 1, W, H]
-    self.layer.add(nn.PReLU())
+    self.layers.add(spconv.SubMConv2d(1, 64, 1, padding = (1, 1), stride = (1, 1), use_hash=False, indice_key="subm1"), 'SubM_1') #[B, 64, W, H]
+    self.layers.add(nn.PReLU())
+    self.layers.add(spconv.SparseConv2d(64, 256, 3, padding = (1, 1), stride = (1, 1), use_hash = False), 'SConv_1') #[B, 256, W, H]
+    self.layers.add(nn.PReLU())
+    self.layers.add(spconv.SparseConv2d(256, 512, 3, padding = (1, 1), stride = (1, 1), use_hash = False), 'SConv_2') #[B, 512, W, H]
+    self.layers.add(nn.PReLU())
+    self.layers.add(spconv.SparseConv2d(512, 256, 3, padding = (1, 1), stride = (1, 1), use_hash = False), 'SConv_3') #[B, 256, W, H]
+    self.layers.add(nn.PReLU())
+    self.layers.add(spconv.SparseConv2d(256, 64, 3, padding = (1, 1), stride = (1, 1), use_hash = False), 'SConv_4') #[B, 128, W, H]
+    self.layers.add(nn.PReLU())
+    self.layers.add(spconv.SubMConv2d(64, 1, 3, padding = (1, 1), stride = (1, 1), use_hash=False, indice_key="subm4"), 'SubM_4') #[B, 1, W, H]
+    self.layers.add(nn.PReLU())
 
   def forward(self, A):
     
-    A_inv = self.layers(A)
-    A_inv = Spconvec_to_torch(A_inv)
-    A_inv = A_inv.bmm(A_inv.transpose(2, 1))
-    A_inv = make_symmetric(A_inv)
-    return A_inv
+    A = to_Spconvec(A)
+    A_inv = self.layers(A).dense().squeeze()
+    L = torch.tril(A_inv, diagonal=-1)
+    D = nn.functional.threshold(torch.diag(A_inv), 1e-5, 1e-5)
+    A_inv = L + torch.diag(D)
+    return torch.mm(A_inv, A_inv.transpose(-2, -1))
+
+class precondUNet(nn.Module):
+  
+  '''
+  UNet like architecture for DeepLearned Preconditioner.
+  '''
+  def __init__(self, maxpool = True):
+    super(precondUNet, self).__init__()
+    
+    self.inp_layer = DoubleConv(1, 32, 16)
+    self.down1 = Down(32, 64, 48, maxpool)
+    self.down2 = Down(64, 128, 96, maxpool)
+    self.down3 = Down(128, 256, 192, maxpool)
+    self.down4 = Down(256, 512, 384, maxpool)
+    self.up1 = Up(512, 256, 384)
+    self.up2 = Up(256, 128, 192)
+    self.up3 = Up(128, 64, 96)
+    self.up4 = Up(64, 32, 48)
+    self.out_layer = DoubleConv(32, 1, 16)
+
+  def forward(self, A):
+    
+    A = to_Spconvec(A)              #[B, 1, W, H]
+    A_inp = self.inp_layer(A)       #[B, 32, W, H]
+    A1 = self.down1(A_inp)          #[B, 64, W/2, H/2]
+    A2 = self.down2(A1)             #[B, 128, W/4, H/4]
+    A3 = self.down3(A2)             #[B, 256, W/8, H/8]
+    A4 = self.down4(A3)             #[B, 512, W/16, H/16]
+    A3 = self.up1(A4, A3)           #[B, 256, W/8, H/8]
+    A2 = self.up2(A3, A2)           #[B, 128, W/4, H/4]
+    A1 = self.up3(A2, A1)           #[B, 64, W/2, W/2]
+    A_out = self.up4(A1, A_inp)     #[B, 32, W, H]
+    A_inv = self.out_layer(A_out)   #[B, 1, W, H]
+
+    A_inv = A_inv.dense().squeeze()
+    L = torch.tril(A_inv, diagonal=-1)
+    D = nn.functional.threshold(torch.diag(A_inv), 1e-5, 1e-5)
+    A_inv = L + torch.diag(D)
+    return torch.mm(A_inv, A_inv.transpose(-2, -1))
+
+class precondUNet_ws(nn.Module):
+
+  '''
+  UNet like architecture but with weight shared layers
+  '''
+
+  def __init__(self, maxpool = True):
+    super(precondUNet_ws, self).__init__()
+
+    self.inConv = DoubleConv(1, 64, 32)
+    self.downs = Down(64, 64, 128, maxpool)
+    self.ups = Up_ws(64, 64, 128)
+    self.outConv = DoubleConv(64, 1, 32)
+  
+  def forward(self, A):
+    
+    A = to_Spconvec(A)              #[B, 1, W, H]
+    A_inp = self.inConv(A)          #[B, 64, W, H]
+    A1 = self.downs(A_inp)          #[B, 64, W/2, H/2] -> [64, 128, 64]
+    A2 = self.downs(A1)             #[B, 64, W/4, H/2] -> [64, 128, 64]
+    A3 = self.downs(A2)             #[B, 64, W/8, H/2] -> [64, 128, 64]
+    A4 = self.downs(A3)             #[B, 64, W/16, H/2] -> [64, 128, 64]
+    A3 = self.ups(A4, A3)           #[B, 64, W/8, H/8] -> [64, 128, 64]
+    A2 = self.ups(A3, A2)           #[B, 64, W/4, H/4] -> [64, 128, 64]
+    A1 = self.ups(A2, A1)           #[B, 64, W/2, H/2] -> [64, 128, 64]
+    A_out = self.ups(A1, A_inp)     #[B, 64, W, H] -> [64, 128, 64]
+    A_inv = self.outConv(A_out)     #[B, 1, W, H] -> [64, 32, 1]
+
+    A_inv = A_inv.dense().squeeze()
+    L = torch.tril(A_inv, diagonal=-1)
+    D = nn.functional.threshold(torch.diag(A_inv), 1e-5, 1e-5)
+    A_inv = L + torch.diag(D)
+    return torch.mm(A_inv, A_inv.transpose(-2, -1))
